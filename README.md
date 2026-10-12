@@ -4,7 +4,7 @@ A software-only **telephone entry system** for condo lobbies. A visitor at the l
 
 Built to learn how intercom / telephone-entry products work end to end: SIP telephony on Linux, a Node.js backend, and the installer-facing documentation needed to support it in the field.
 
-![Dashboard](docs/images/dashboard.png)
+![Dashboard](docs/images/Dashboard.png)
 
 ## How it works
 
