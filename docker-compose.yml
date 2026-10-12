@@ -1,0 +1,34 @@
+services:
+  asterisk:
+    build: .
+    container_name: asterisk
+    restart: unless-stopped
+    depends_on:
+      - api
+
+    # --- Docker Desktop (Windows / macOS): use port mapping (default) ---
+    ports:
+      - "5061:5060/udp"               # SIP signaling (host 5061, since 5060 is taken on this PC)
+      - "10000-10100:10000-10100/udp" # RTP audio
+      # 8088 (ARI) is deliberately NOT published: only the api container can reach it
+
+    volumes:
+      - ./config/pjsip.conf:/etc/asterisk/pjsip.conf
+      - ./config/extensions.conf:/etc/asterisk/extensions.conf
+      - ./config/rtp.conf:/etc/asterisk/rtp.conf
+      - ./config/features.conf:/etc/asterisk/features.conf
+      - ./config/http.conf:/etc/asterisk/http.conf
+      - ./config/ari.conf:/etc/asterisk/ari.conf
+
+  api:
+    build: ./api
+    container_name: api
+    restart: unless-stopped
+    environment:
+      - ARI_URL=http://asterisk:8088
+      - ARI_USER=dashboard
+      - ARI_PASS=DashRead2026         # must match config/ari.conf
+    ports:
+      - "3000:3000"                   # dashboard: http://localhost:3000
+    volumes:
+      - ./data:/app/data              # access log lives here (not committed to git)

@@ -1,0 +1,5 @@
+{
+  "100": { "label": "Lobby Panel", "role": "lobby" },
+  "101": { "label": "Suite 101", "role": "suite", "resident": "A. Chen" },
+  "102": { "label": "Suite 102", "role": "suite", "resident": "M. Okafor" }
+}

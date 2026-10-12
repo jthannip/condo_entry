@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Condo Entry · Lobby Control</title>
+<style>
+  :root {
+    --bg: #0f1216; --panel: #171b21; --line: #262c35; --text: #e6e9ee; --muted: #8a93a1;
+    --ok: #3ccf8e; --warn: #f2b84b; --fail: #ff6b6b; --accent: #5aa9ff;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+           padding: 18px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .2px; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  #updated { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  #banner { display: none; background: #3a1d1f; color: #ffd0d0; padding: 10px 24px;
+            border-bottom: 1px solid #5c2a2d; }
+  main { display: grid; gap: 16px; padding: 20px 24px 40px;
+         grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr); max-width: 1280px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 16px; } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; }
+  .panel h2 { margin: 0 0 12px; font-size: 12px; font-weight: 600; color: var(--muted);
+              text-transform: uppercase; letter-spacing: .8px; }
+  .wide { grid-column: 1 / -1; }
+
+  /* door */
+  #door-state { font-size: 34px; font-weight: 700; letter-spacing: 1px; margin: 4px 0 2px; }
+  #door-state.locked { color: var(--text); }
+  #door-state.unlocked { color: var(--ok); }
+  #door-since { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+  button { margin-top: 14px; background: transparent; color: var(--accent); border: 1px solid var(--accent);
+           border-radius: 7px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  button:hover { background: rgba(90,169,255,.1); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  /* stats */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat small { color: var(--muted); }
+
+  /* checks + devices */
+  .check { display: grid; grid-template-columns: 14px 1fr; gap: 4px 10px; padding: 9px 0;
+           border-top: 1px solid var(--line); }
+  .check:first-child { border-top: 0; padding-top: 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: var(--muted); }
+  .dot.pass, .dot.online { background: var(--ok); }
+  .dot.warn, .dot.offline { background: var(--warn); }
+  .dot.fail, .dot.missing { background: var(--fail); }
+  .check .detail { color: var(--muted); }
+  .check .hint { grid-column: 2; font-size: 13px; color: var(--warn); }
+  .check .hint.fail { color: var(--fail); }
+  .devices { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .device { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: flex; gap: 10px; }
+  .device .dot { flex: none; }
+  .device small { color: var(--muted); display: block; }
+
+  /* log */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 0 10px 8px 0; }
+  td { padding: 8px 10px 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  td.time { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px;
+         border: 1px solid currentColor; white-space: nowrap; }
+  .tag.unlock { color: var(--ok); } .tag.deny { color: var(--fail); }
+  .tag.answer { color: var(--accent); } .tag.missed { color: var(--warn); } .tag.other { color: var(--muted); }
+  .empty { color: var(--muted); padding: 10px 0; }
+  .scroll { overflow-x: auto; }
+  @media (max-width: 600px) { th:nth-child(4), td:nth-child(4) { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Condo Entry <span>· Lobby Control</span></h1>
+  <div id="updated">connecting…</div>
+</header>
+<div id="banner">Can't reach the backend. Is the <b>api</b> container running? Try <code>docker ps</code>.</div>
+
+<main>
+  <section class="panel">
+    <h2>Front door</h2>
+    <div id="door-state" class="locked">—</div>
+    <div id="door-since"></div>
+    <button id="unlock-btn" type="button">Unlock door (5 s)</button>
+  </section>
+
+  <section class="panel">
+    <h2>Today</h2>
+    <div class="stats">
+      <div class="stat"><b id="s-calls">0</b><small>Calls</small></div>
+      <div class="stat"><b id="s-answered">0</b><small>Answered</small></div>
+      <div class="stat"><b id="s-missed">0</b><small>Missed</small></div>
+      <div class="stat"><b id="s-unlocks">0</b><small>Unlocks</small></div>
+      <div class="stat"><b id="s-denied">0</b><small>Denied</small></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Diagnostics</h2>
+    <div id="checks"><div class="empty">Running checks…</div></div>
+  </section>
+
+  <section class="panel">
+    <h2>Devices</h2>
+    <div id="devices" class="devices"></div>
+  </section>
+
+  <section class="panel wide">
+    <h2>Access log</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Time</th><th>Event</th><th>Unit</th><th>Detail</th></tr></thead>
+        <tbody id="log"><tr><td colspan="4" class="empty">No events yet.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let residents = {};
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function fmtTime(iso) {
+  const d = new Date(iso);
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString()} ${t}`;
+}
+
+function unitName(ext) {
+  const r = residents[ext];
+  if (!ext) return '—';
+  return r ? `${r.label}${r.resident ? ' · ' + r.resident : ''}` : `Ext ${ext}`;
+}
+
+const CALL_STATUS = {
+  ANSWER: ['Call answered', 'answer', 'Resident picked up'],
+  NOANSWER: ['Missed call', 'missed', 'No answer within 30 s'],
+  CANCEL: ['Visitor hung up', 'missed', 'Hung up before the resident answered'],
+  BUSY: ['Busy', 'missed', 'Suite phone was busy'],
+  CHANUNAVAIL: ['Phone offline', 'missed', 'Suite phone not registered'],
+  CONGESTION: ['Call failed', 'missed', 'Network or server problem'],
+};
+
+function describe(e) {
+  if (e.type === 'unlock') {
+    return e.via === 'dashboard'
+      ? ['Door unlocked', 'unlock', '—', 'Unlocked from dashboard']
+      : ['Door unlocked', 'unlock', unitName(e.suite), 'Resident pressed 9'];
+  }
+  if (e.type === 'deny') return ['Entry denied', 'deny', unitName(e.suite), 'Resident pressed 0'];
+  if (e.type === 'call') {
+    const [label, cls, detail] = CALL_STATUS[e.status] || [e.status, 'other', ''];
+    return [label, cls, unitName(e.suite), detail];
+  }
+  return [e.type, 'other', unitName(e.suite), ''];
+}
+
+function renderDoor(door) {
+  const el = $('door-state');
+  el.textContent = door.state.toUpperCase();
+  el.className = door.state;
+  $('door-since').textContent = `since ${fmtTime(door.since)}`;
+}
+
+function renderEvents(events) {
+  const today = new Date().toDateString();
+  const t = events.filter((e) => new Date(e.time).toDateString() === today);
+  const calls = t.filter((e) => e.type === 'call');
+  $('s-calls').textContent = calls.length;
+  $('s-answered').textContent = calls.filter((e) => e.status === 'ANSWER').length;
+  $('s-missed').textContent = calls.filter((e) => e.status !== 'ANSWER').length;
+  $('s-unlocks').textContent = t.filter((e) => e.type === 'unlock').length;
+  $('s-denied').textContent = t.filter((e) => e.type === 'deny').length;
+
+  const rows = events.slice(0, 25).map((e) => {
+    const [label, cls, unit, detail] = describe(e);
+    return `<tr><td class="time">${esc(fmtTime(e.time))}</td>
+      <td><span class="tag ${cls}">${esc(label)}</span></td>
+      <td>${esc(unit)}</td><td>${esc(detail)}</td></tr>`;
+  });
+  $('log').innerHTML = rows.join('') || '<tr><td colspan="4" class="empty">No events yet.</td></tr>';
+}
+
+function renderDiagnostics(diag) {
+  $('checks').innerHTML = diag.checks.map((c) => `
+    <div class="check">
+      <span class="dot ${c.status}" title="${c.status}"></span>
+      <div><b>${esc(c.name)}</b> <span class="detail">— ${esc(c.detail)}</span></div>
+      ${c.hint ? `<div class="hint ${c.status}">${esc(c.hint)}</div>` : ''}
+    </div>`).join('');
+
+  const STATE = { online: 'Online', offline: 'Offline', missing: 'Not configured', unknown: 'Unknown' };
+  $('devices').innerHTML = diag.devices.map((d) => `
+    <div class="device">
+      <span class="dot ${d.role === 'lobby' && d.state === 'offline' ? 'fail' : d.state}"></span>
+      <div><b>${esc(d.label)}</b>
+        <small>Ext ${esc(d.ext)}${d.resident ? ' · ' + esc(d.resident) : ''}</small>
+        <small>${STATE[d.state] || d.state}${d.inCall ? ' · in call' : ''}</small></div>
+    </div>`).join('');
+}
+
+async function getJSON(url, opts) {
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(`${url} -> ${r.status}`);
+  return r.json();
+}
+
+async function refresh() {
+  try {
+    const [door, events, diag] = await Promise.all([
+      getJSON('/api/door/status'), getJSON('/api/events?limit=200'), getJSON('/api/diagnostics'),
+    ]);
+    renderDoor(door); renderEvents(events); renderDiagnostics(diag);
+    $('banner').style.display = 'none';
+    $('updated').textContent = `updated ${fmtTime(new Date().toISOString())}`;
+  } catch (err) {
+    $('banner').style.display = 'block';
+    $('updated').textContent = 'offline';
+  }
+}
+
+$('unlock-btn').addEventListener('click', async () => {
+  const btn = $('unlock-btn');
+  btn.disabled = true;
+  try { await getJSON('/api/door/remote-unlock', { method: 'POST' }); await refresh(); }
+  finally { setTimeout(() => (btn.disabled = false), 1000); }
+});
+
+(async () => {
+  try { residents = await getJSON('/api/residents'); } catch {}
+  refresh();
+  setInterval(refresh, 3000);
+})();
+</script>
+</body>
+</html>
